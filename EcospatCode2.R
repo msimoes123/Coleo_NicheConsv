@@ -505,3 +505,80 @@ for (i in 1:length(spvector)) {
 }
 
 
+
+
+
+#Ellipsenm Models 
+
+#Creating the calibration area with pricipal components 
+
+# PCA------
+library(kuenm)
+
+var_folder <- "E:\\Expansion\\WC_2.1\\Vars" # name of folder with variables to be combined in distinct sets
+out_folder <- "E:\\Expansion\\WC_2.1\\PCS_Elps" # name of folder that will contain the sets
+in_format <- "GTiff" # other options available are "GTiff" and "EHdr" = bil
+out_format <- "GTiff" # other options available are "GTiff" and "EHdr" = bil
+npcs <-  2 # number of pcs you want as rasters, if not defined all pcs are returned as rasters
+
+# PCA of variables for models
+kuenm_rpca(variables  = var_folder, in.format = in_format, var.scale = TRUE, write.result = TRUE, 
+           out.format = out_format, out.dir = out_folder, n.pcs = npcs)
+
+
+#Run Models: Ellipsenm
+library(raster)
+setwd('E:\\Expansion\\Dataset')
+
+spvector <- dir()
+
+var<-c("bio_2","bio_4","bio_5","bio_6","bio_7","bio_13","bio_14", "bio_15")
+out_dir <- paste(spvector, "/", "Calibration_E", sep = "")
+i=1
+for (i in 1:length(spvector)) {
+  # reading species data
+  #native
+  sp <- read.csv(paste(spvector[i], "/", paste(spvector[i], "_n_thin.csv", sep = ""), 
+                       sep = ""))
+  sp_nodup <- unique(sp)
+  
+  colnames(sp_nodup)
+  
+  # raster layers of environmental data (this ones are masked to the accessible area)
+  # users must prepare their layers accordingly if using other data
+  #Calibration areas
+  WGS84 <- sp::CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
+  
+  Buffer_n <- stack(list.files(path = paste(spvector[i], "M_variables", 'BUFFAREA_n/', sep = "/"),
+                               pattern = ".tif", full.names = TRUE))
+  
+  Biome_n <- stack(list.files(path = paste(spvector[i], "M_variables", 'BIOMEPly/', sep = "/"),
+                              pattern = ".tif", full.names = TRUE))
+  
+  Koppen_n <- stack(list.files(path = paste(spvector[i], "M_variables", 'KOPPENPly/', sep = "/"),
+                               pattern = ".tif", full.names = TRUE))
+  
+ 
+  # preparing training and testing data
+  data_split <- split_data(sp_nodup, method = "random", longitude = "Longitude", 
+                           latitude = "Latitude", train_proportion = 0.7, 
+                           save = FALSE, name = "Split_Nat")
+  
+  # sets of variables (example)
+  sets <- list(set_1 = c("bio_2","bio_4","bio_5","bio_6","bio_7","bio_13","bio_14", "bio_15")) # change as needed
+  
+  variable_sets <- prepare_sets(Buffer_n, sets)
+ 
+  dir.create('E_calibration_results')
+  
+  # methods to create ellipsoids
+  methods <- c("mve1")
+  # model calibration process
+  calib <- ellipsoid_calibration(data_split, species = "Species", longitude = "Longitude", 
+                                 latitude = "Latitude", variables = variable_sets,
+                                 methods = methods, level = 99, selection_criteria = "S_OR_P",
+                                 error = 5, iterations = 100, percentage = 50,
+                                 output_directory = out_dir[i], overwrite = TRUE)
+ 
+  cat(i, "species of", length(spvector), "\n")
+}
